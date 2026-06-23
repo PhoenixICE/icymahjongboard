@@ -101,7 +101,6 @@
       position: relative;
       background: #55aaff;
     }
-    /* MODIFIED: .tile is the container. Added flexbox to center the child image. */
     .tile {
       position: absolute;
       width: 80px;
@@ -112,22 +111,16 @@
       transition: border-color 0.1s;
       z-index: 10;
       box-sizing: border-box;
-      /* Center the inner image */
       display: flex;
       justify-content: center;
       align-items: center;
     }
-    /* MODIFIED: The image is now FIXED size, not 100%. 
-       Flexbox on the parent handles centering it. 
-       Transform handles the rotation. */
     .tile img {
         width: 80px;
         height: 129px;
         display: block;
         pointer-events: none;
         transition: transform 0.2s ease-in-out;
-        /* Important: flex-shrink ensures it doesn't try to shrink
-           when placed inside a 129x80 container before rotation */
         flex-shrink: 0; 
     }
     .tile:active {
@@ -201,7 +194,7 @@
     #save-load-controls {
         padding: 10px;
         border-top: 1px solid #444;
-        margin-top: auto; /* Pushes to the bottom */
+        margin-top: auto;
     }
     #save-load-controls input,
     #save-load-controls select,
@@ -230,6 +223,41 @@
     }
     #update-state-button {
       display: none;
+    }
+    #settings-section {
+      padding: 10px;
+      border-top: 1px solid #444;
+    }
+    #settings-section label {
+      font-size: 0.9em;
+      color: #aaa;
+      vertical-align: middle;
+    }
+    #settings-section input[type="color"] {
+      padding: 0;
+      border: 1px solid #555;
+      vertical-align: middle;
+      width: 30px;
+      height: 30px;
+      background: none;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+    .github-button {
+      display: block;
+      width: 100%;
+      padding: 8px;
+      background: #2ea44f;
+      color: white;
+      text-align: center;
+      text-decoration: none;
+      border: 1px solid #2ea44f;
+      border-radius: 3px;
+      box-sizing: border-box;
+      font-size: 0.9em;
+    }
+    .github-button:hover {
+      background: #2c974b;
     }
     .hide-rect {
       position: absolute;
@@ -296,7 +324,7 @@
       <button class="tool-button" id="rotate-button">Rotate (R)</button>
     </div>
     <div id="tile-palette"></div>
-     <div id="save-load-controls">
+    <div id="save-load-controls">
       <label for="save-name-input">Save Current State</label>
       <input type="text" id="save-name-input" placeholder="Enter name...">
       <button id="save-button">Save</button>
@@ -308,6 +336,14 @@
       <button id="load-button">Load</button>
       <button id="update-state-button">Update Selected</button>
       <button id="delete-state-button">Delete Selected State</button>
+    </div>
+    
+    <div id="settings-section">
+      <div class="option-row">
+        <label for="bg-color-picker">Background:</label>
+        <input type="color" id="bg-color-picker" value="#55aaff">
+      </div>
+      <a href="https://github.com/PhoenixICE/icymahjongboard" target="_blank" class="github-button">GitHub Repository</a>
     </div>
   </div>
   <div id="board">
@@ -322,7 +358,7 @@
       <path stroke="#4CAF50" stroke-width="2" fill="none" marker-end="url(#preview-arrowhead)" />
     </svg>
   </div>
-     <script>
+  <script>
     const palette = document.getElementById('palette');
     const tilePalette = document.getElementById('tile-palette');
     const board = document.getElementById('board');
@@ -350,8 +386,12 @@
     const loadButton = document.getElementById('load-button');
     const deleteStateButton = document.getElementById('delete-state-button');
     const updateStateButton = document.getElementById('update-state-button');
+    
+    const bgColorPicker = document.getElementById('bg-color-picker');
 
-    const tileImages = Array.from({ length: 38 }, (_, i) => `tile_${String(i).padStart(2, '0')}.png`);
+    // Expanded Array logic to 39
+    const tileImages = Array.from({ length: 39 }, (_, i) => `tile_${String(i).padStart(2, '0')}.png`);
+    // Indices 37 & 38 excluded from drawable constraints by slicing to 37 items (0 to 36)
     const drawableTiles = tileImages.slice(0, 37);
     let tileCounts = {};
     tileImages.forEach(tile => tileCounts[tile] = 0);
@@ -380,6 +420,23 @@
       return TILE_LIMITS[tileName] || DEFAULT_TILE_LIMIT;
     }
 
+    // Determine the max possible draws dynamically based on all constraints
+    const MAX_POSSIBLE_DRAWS = drawableTiles.reduce((sum, tileName) => sum + getTileLimit(tileName), 0);
+
+    // Dynamic UI Update logic for standard tile generation
+    function updateDrawCounter() {
+        recalculateTileCounts();
+        
+        // Sum the tiles, but NEVER count more than the legal limit for a specific tile
+        const validDrawn = drawableTiles.reduce((sum, tile) => {
+            const legalCount = Math.min(tileCounts[tile], getTileLimit(tile));
+            return sum + legalCount;
+        }, 0);
+        
+        const remaining = MAX_POSSIBLE_DRAWS - validDrawn;
+        document.getElementById('generate-tile-button').textContent = `Draw (${Math.max(0, remaining)})`;
+    }
+
     // --- UTILITY FUNCTIONS ---
     function resetTileCounts() { tileImages.forEach(tile => tileCounts[tile] = 0); }
     function recalculateTileCounts() {
@@ -398,6 +455,7 @@
     function deleteSelectedItems() {
         selections.forEach(item => { if (board.contains(item)) board.removeChild(item); });
         clearAllSelections();
+        updateDrawCounter(); // ensure counts are recalibrated after explicit deletes
     }
     function rgbToHex(rgb) {
         if (!rgb || !rgb.startsWith('rgb')) return rgb;
@@ -428,9 +486,50 @@
         button.addEventListener('click', () => setActiveTool(button.id.replace('-tool', '')));
     });
 
+    // Background Color Event Hook
+    bgColorPicker.addEventListener('input', (e) => {
+        board.style.background = e.target.value;
+    });
+
     // --- TILE MANAGEMENT ---
-    function findNextSpawnPosition() { /* ... unchanged ... */ }
-    function createDraggableTile({ src, left, top, rotation = 0 }) { /* ... unchanged ... */ }
+    function findNextSpawnPosition() {
+        const boardRect = board.getBoundingClientRect(); const buffer = 5;
+        if (nextSpawnX + TILE_WIDTH > boardRect.width) {
+            nextSpawnX = 50; nextSpawnY += TILE_HEIGHT + buffer;
+        }
+        if (nextSpawnY + TILE_HEIGHT > boardRect.height) { nextSpawnX = 50; nextSpawnY = 50; }
+        const spawnPos = { x: nextSpawnX, y: nextSpawnY };
+        nextSpawnX += TILE_WIDTH; return spawnPos;
+    }
+    
+    function createDraggableTile({ src, left, top, rotation = 0 }) {
+        const container = document.createElement('div');
+        container.className = 'tile';
+        container.dataset.src = src;
+        container.dataset.rotation = rotation;
+
+        const img = document.createElement('img');
+        img.src = TILE_PATH_PREFIX + src;
+        img.draggable = false;
+        container.appendChild(img);
+
+        const isSideways = rotation === 90 || rotation === 270;
+        container.style.width = (isSideways ? TILE_HEIGHT : TILE_WIDTH) + 'px';
+        container.style.height = (isSideways ? TILE_WIDTH : TILE_HEIGHT) + 'px';
+        img.style.transform = `rotate(${rotation}deg)`;
+
+        if (left === undefined || top === undefined) {
+            const spawnPos = findNextSpawnPosition();
+            container.style.left = snapToGrid(spawnPos.x) + 'px';
+            container.style.top = snapToGrid(spawnPos.y) + 'px';
+        } else {
+            container.style.left = left;
+            container.style.top = top;
+        }
+        board.appendChild(container);
+        addInteractionListeners(container);
+        return container;
+    }
     
     function rotateSelectedTiles() {
         selections.forEach(item => {
@@ -444,9 +543,6 @@
                 img.style.transform = `rotate(${newRotation}deg)`;
 
                 const isSideways = newRotation === 90 || newRotation === 270;
-                // Swap the container dimensions. 
-                // The inner image is fixed size and centered by flexbox, 
-                // so when it rotates, it will fit perfectly.
                 item.style.width = (isSideways ? TILE_HEIGHT : TILE_WIDTH) + 'px';
                 item.style.height = (isSideways ? TILE_WIDTH : TILE_HEIGHT) + 'px';
             }
@@ -454,11 +550,79 @@
     }
 
     // --- ARROW MANAGEMENT ---
-    function pointsToPath(points) { /* ... unchanged ... */ }
-    function createArrow({ points }) { /* ... unchanged ... */ }
+    function pointsToPath(points) {
+        if (!points || points.length < 2) return '';
+        let path = `M ${points[0].x} ${points[0].y}`;
+        if (points.length === 2) return path + ` L ${points[1].x} ${points[1].y}`;
+        let i;
+        for (i = 1; i < points.length - 2; i++) {
+            path += ` Q ${points[i].x} ${points[i].y}, ${(points[i].x + points[i + 1].x) / 2} ${(points[i].y + points[i + 1].y) / 2}`;
+        }
+        path += ` Q ${points[i].x} ${points[i].y}, ${points[i + 1].x} ${points[i + 1].y}`;
+        return path;
+    }
+    function createArrow({ points }) {
+        const svg = document.createElementNS(SVG_NS, 'svg');
+        svg.classList.add('arrow'); svg.style.position = 'absolute';
+        svg.style.left = 0; svg.style.top = 0; svg.style.width = '100%';
+        svg.style.height = '100%'; svg.style.pointerEvents = 'none';
+        svg.arrowData = { points: JSON.parse(JSON.stringify(points)) };
+        const defs = document.createElementNS(SVG_NS, 'defs');
+        const marker = document.createElementNS(SVG_NS, 'marker');
+        const polygon = document.createElementNS(SVG_NS, 'polygon');
+        const pathData = pointsToPath(points);
+        const visiblePath = document.createElementNS(SVG_NS, 'path');
+        visiblePath.setAttribute('d', pathData); visiblePath.setAttribute('class', 'visible-path');
+        visiblePath.setAttribute('stroke', '#4CAF50'); visiblePath.setAttribute('stroke-width', '3');
+        visiblePath.setAttribute('fill', 'none'); visiblePath.setAttribute('stroke-linecap', 'round');
+        visiblePath.setAttribute('stroke-linejoin', 'round'); visiblePath.setAttribute('marker-end', 'url(#arrowhead)');
+        visiblePath.style.pointerEvents = 'none';
+        const hitboxPath = document.createElementNS(SVG_NS, 'path');
+        hitboxPath.setAttribute('d', pathData); hitboxPath.setAttribute('stroke', 'transparent');
+        hitboxPath.setAttribute('stroke-width', '15'); hitboxPath.setAttribute('fill', 'none');
+        hitboxPath.setAttribute('class', 'hitbox'); hitboxPath.setAttribute('stroke-linecap', 'round');
+        hitboxPath.setAttribute('stroke-linejoin', 'round');
+        marker.setAttribute('id', 'arrowhead'); marker.setAttribute('markerWidth', '10'); marker.setAttribute('markerHeight', '7');
+        marker.setAttribute('refX', '9'); marker.setAttribute('refY', '3.5'); marker.setAttribute('orient', 'auto-start-reverse');
+        polygon.setAttribute('points', '0 0, 10 3.5, 0 7'); polygon.setAttribute('fill', '#4CAF50');
+        marker.appendChild(polygon); defs.appendChild(marker); svg.appendChild(defs); svg.appendChild(hitboxPath);
+        svg.appendChild(visiblePath); board.appendChild(svg); addInteractionListeners(svg); return svg;
+    }
 
     // --- TEXT MANAGEMENT ---
-    function createTextElement({ text, left, top, color, fontSize }, event) { /* ... unchanged ... */ }
+    function createTextElement({ text, left, top, color, fontSize }, event) {
+        const textEl = document.createElement('div');
+        textEl.className = 'text-element';
+        if (left === undefined || top === undefined) {
+            const boardRect = board.getBoundingClientRect();
+            textEl.style.left = snapToGrid(event.clientX - boardRect.left) + 'px';
+            textEl.style.top = snapToGrid(event.clientY - boardRect.top) + 'px';
+            textEl.textContent = ''; textEl.contentEditable = true; textEl.classList.add('editing');
+            textEl.style.color = textColorInput.value; textEl.style.fontSize = fontSizeInput.value + 'px';
+        } else {
+            textEl.style.left = left; textEl.style.top = top; textEl.textContent = text;
+            textEl.contentEditable = false; textEl.style.color = color || 'white';
+            textEl.style.fontSize = fontSize || '16px';
+        }
+        textEl.addEventListener('dblclick', (e) => {
+            if (currentTool !== 'select') return; e.stopPropagation();
+            textEl.contentEditable = true; textEl.classList.add('editing');
+            textEl.focus(); document.execCommand('selectAll', false, null);
+        });
+        textEl.addEventListener('blur', () => {
+            textEl.contentEditable = false; textEl.classList.remove('editing');
+            if (textEl.textContent.trim() === '' && left === undefined) {
+                if (board.contains(textEl)) board.removeChild(textEl);
+            }
+        });
+        textEl.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); textEl.blur(); }
+            if (textEl.classList.contains('editing') && (e.key === 'Delete' || e.key === 'Backspace')) e.stopPropagation();
+        });
+        board.appendChild(textEl); addInteractionListeners(textEl);
+        if (left === undefined) setTimeout(() => textEl.focus(), 0); return textEl;
+    }
+    
     function updateTextOptions() {
         const selectedTextElements = [...selections].filter(el => el.classList.contains('text-element'));
         const isTextToolActive = currentTool === 'text';
@@ -571,7 +735,6 @@
             clearAllSelections(); selections.add(element); element.classList.add('selected');
         }
         isDragging = true; dragOffsets.clear();
-        const boardRect = board.getBoundingClientRect();
         selections.forEach(sel => {
             if (sel.classList.contains('arrow')) {
                 dragOffsets.set(sel, { type: 'arrow', initialPoints: JSON.parse(JSON.stringify(sel.arrowData.points)), offsetX: e.clientX, offsetY: e.clientY });
@@ -584,8 +747,27 @@
         document.addEventListener('mouseup', handleDragEnd, { once: true });
         updateToolOptionPanels();
     }
-    function handleDrag(e) { /* ... unchanged ... */ }
-    function handleDragEnd() { /* ... unchanged ... */ }
+    function handleDrag(e) {
+        if (!isDragging) return;
+        const boardRect = board.getBoundingClientRect();
+        selections.forEach(sel => {
+            const offset = dragOffsets.get(sel);
+            if (offset.type === 'arrow') {
+                const dx = e.clientX - offset.offsetX, dy = e.clientY - offset.offsetY;
+                const newPoints = offset.initialPoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
+                sel.arrowData.points = newPoints;
+                sel.querySelectorAll('path').forEach(p => p.setAttribute('d', pointsToPath(newPoints)));
+            } else {
+                sel.style.left = snapToGrid(e.clientX - boardRect.left - offset.offsetX) + 'px';
+                sel.style.top = snapToGrid(e.clientY - boardRect.top - offset.offsetY) + 'px';
+            }
+        });
+    }
+    function handleDragEnd() {
+        document.removeEventListener('mousemove', handleDrag);
+        setTimeout(() => { isDragging = false; }, 0);
+        dragOffsets.clear();
+    }
 
     // --- BOARD INTERACTION (BACKGROUND) ---
     board.addEventListener('mousedown', (e) => {
@@ -602,8 +784,26 @@
         else if (currentTool === 'select') handleSelectionBoxStart(e);
     });
     
-    function handleArrowDraw(e) { /* ... unchanged ... */ }
-    function handleArrowEnd(e) { /* ... unchanged ... */ }
+    function handleArrowDraw(e) {
+        if (!isDrawingArrow) return;
+        const boardRect = board.getBoundingClientRect();
+        arrowPoints.push({ x: e.clientX - boardRect.left, y: e.clientY - boardRect.top });
+        arrowPreviewPath.setAttribute('d', pointsToPath(arrowPoints));
+    }
+    function handleArrowEnd(e) {
+        document.removeEventListener('mousemove', handleArrowDraw); isDrawingArrow = false;
+        const boardRect = board.getBoundingClientRect();
+        const x = e.clientX - boardRect.left, y = e.clientY - boardRect.top;
+        if (!arrowPoints.length || arrowPoints[arrowPoints.length - 1].x !== x || arrowPoints[arrowPoints.length - 1].y !== y) {
+            arrowPoints.push({ x, y });
+        }
+        arrowPreview.style.display = 'none'; arrowPreviewPath.setAttribute('d', '');
+        if (arrowPoints.length >= 2) {
+            const points = [...arrowPoints];
+            createArrow({ points: e.shiftKey ? [points[0], points[points.length-1]] : points });
+        }
+        arrowPoints = [];
+    }
     
     function handleRectDrawStart(e) {
         const boardRect = board.getBoundingClientRect();
@@ -699,7 +899,13 @@
     const STORAGE_PREFIX = 'mahjong_state_';
 
     function getBoardState() {
-        const state = { tiles: [], arrows: [], texts: [], rects: [] };
+        const state = { 
+            tiles: [], 
+            arrows: [], 
+            texts: [], 
+            rects: [],
+            backgroundColor: bgColorPicker.value // Track custom color
+        };
         document.querySelectorAll('.tile').forEach(t => state.tiles.push({ 
             src: t.dataset.src, 
             left: t.style.left, 
@@ -741,17 +947,43 @@
         const stateJSON = localStorage.getItem(STORAGE_PREFIX + name);
         if (!stateJSON) { alert('Error: Could not find saved state.'); return; }
         const state = JSON.parse(stateJSON);
+        
+        // Safeguard backward compatibility for old states missing backgroundColor
+        const loadedBgColor = state.backgroundColor || '#55aaff';
+        board.style.background = loadedBgColor;
+        bgColorPicker.value = rgbToHex(loadedBgColor);
+
         board.querySelectorAll('.tile, .arrow, .text-element, .hide-rect').forEach(el => el.remove());
         clearAllSelections();
         nextSpawnX = 50; nextSpawnY = 50;
+        
         if (state.tiles) state.tiles.forEach(t => createDraggableTile(t));
         if (state.arrows) state.arrows.forEach(a => createArrow(a));
         if (state.texts) state.texts.forEach(t => createTextElement(t));
         if (state.rects) state.rects.forEach(r => createHideRect(r));
+        
+        updateDrawCounter();
     }
 
-    function deleteState() { /* ... unchanged ... */ }
-    function populateLoadList(currentSelection) { /* ... unchanged ... */ }
+    function deleteState() {
+        const name = loadStateSelect.value;
+        if (!name) { alert('Please select a state to delete.'); return; }
+        if (confirm(`Are you sure you want to delete the state '${name}'?`)) {
+            localStorage.removeItem(STORAGE_PREFIX + name); populateLoadList();
+        }
+    }
+    
+    function populateLoadList(currentSelection) {
+        const savedStates = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_PREFIX)).map(key => key.replace(STORAGE_PREFIX, ''));
+        loadStateSelect.innerHTML = '<option value="">-- Select a state --</option>';
+        savedStates.sort().forEach(name => {
+            const option = document.createElement('option');
+            option.value = name; option.textContent = name;
+            loadStateSelect.appendChild(option);
+        });
+        if (currentSelection) { loadStateSelect.value = currentSelection; }
+        loadStateSelect.dispatchEvent(new Event('change'));
+    }
     
     saveButton.addEventListener('click', saveState);
     loadButton.addEventListener('click', loadState);
@@ -768,182 +1000,21 @@
       clearAllSelections();
       board.querySelectorAll('.tile, .arrow, .text-element, .hide-rect').forEach(el => el.remove());
       resetTileCounts(); nextSpawnX = 50; nextSpawnY = 50;
+      updateDrawCounter();
     });
 
     // --- INITIALIZATION ---
-    findNextSpawnPosition = function() {
-        const boardRect = board.getBoundingClientRect(); const buffer = 5;
-        if (nextSpawnX + TILE_WIDTH > boardRect.width) {
-            nextSpawnX = 50; nextSpawnY += TILE_HEIGHT + buffer;
-        }
-        if (nextSpawnY + TILE_HEIGHT > boardRect.height) { nextSpawnX = 50; nextSpawnY = 50; }
-        const spawnPos = { x: nextSpawnX, y: nextSpawnY };
-        nextSpawnX += TILE_WIDTH; return spawnPos;
-    }
     tileImages.forEach(src => {
         const img = document.createElement('img');
         img.src = TILE_PATH_PREFIX + src;
         img.draggable = false;
-        img.addEventListener('click', () => createDraggableTile({ src }));
+        img.addEventListener('click', () => {
+            createDraggableTile({ src });
+            updateDrawCounter();
+        });
         tilePalette.appendChild(img);
     });
-    createDraggableTile = function({ src, left, top, rotation = 0 }) {
-        const container = document.createElement('div');
-        container.className = 'tile';
-        container.dataset.src = src;
-        container.dataset.rotation = rotation;
 
-        const img = document.createElement('img');
-        img.src = TILE_PATH_PREFIX + src;
-        img.draggable = false;
-        container.appendChild(img);
-
-        const isSideways = rotation === 90 || rotation === 270;
-        container.style.width = (isSideways ? TILE_HEIGHT : TILE_WIDTH) + 'px';
-        container.style.height = (isSideways ? TILE_WIDTH : TILE_HEIGHT) + 'px';
-        img.style.transform = `rotate(${rotation}deg)`;
-
-        if (left === undefined || top === undefined) {
-            const spawnPos = findNextSpawnPosition();
-            container.style.left = snapToGrid(spawnPos.x) + 'px';
-            container.style.top = snapToGrid(spawnPos.y) + 'px';
-        } else {
-            container.style.left = left;
-            container.style.top = top;
-        }
-        board.appendChild(container);
-        addInteractionListeners(container);
-        return container;
-    }
-    pointsToPath = function(points) {
-        if (!points || points.length < 2) return '';
-        let path = `M ${points[0].x} ${points[0].y}`;
-        if (points.length === 2) return path + ` L ${points[1].x} ${points[1].y}`;
-        let i;
-        for (i = 1; i < points.length - 2; i++) {
-            path += ` Q ${points[i].x} ${points[i].y}, ${(points[i].x + points[i + 1].x) / 2} ${(points[i].y + points[i + 1].y) / 2}`;
-        }
-        path += ` Q ${points[i].x} ${points[i].y}, ${points[i + 1].x} ${points[i + 1].y}`;
-        return path;
-    }
-    createArrow = function({ points }) {
-        const svg = document.createElementNS(SVG_NS, 'svg');
-        svg.classList.add('arrow'); svg.style.position = 'absolute';
-        svg.style.left = 0; svg.style.top = 0; svg.style.width = '100%';
-        svg.style.height = '100%'; svg.style.pointerEvents = 'none';
-        svg.arrowData = { points: JSON.parse(JSON.stringify(points)) };
-        const defs = document.createElementNS(SVG_NS, 'defs');
-        const marker = document.createElementNS(SVG_NS, 'marker');
-        const polygon = document.createElementNS(SVG_NS, 'polygon');
-        const pathData = pointsToPath(points);
-        const visiblePath = document.createElementNS(SVG_NS, 'path');
-        visiblePath.setAttribute('d', pathData); visiblePath.setAttribute('class', 'visible-path');
-        visiblePath.setAttribute('stroke', '#4CAF50'); visiblePath.setAttribute('stroke-width', '3');
-        visiblePath.setAttribute('fill', 'none'); visiblePath.setAttribute('stroke-linecap', 'round');
-        visiblePath.setAttribute('stroke-linejoin', 'round'); visiblePath.setAttribute('marker-end', 'url(#arrowhead)');
-        visiblePath.style.pointerEvents = 'none';
-        const hitboxPath = document.createElementNS(SVG_NS, 'path');
-        hitboxPath.setAttribute('d', pathData); hitboxPath.setAttribute('stroke', 'transparent');
-        hitboxPath.setAttribute('stroke-width', '15'); hitboxPath.setAttribute('fill', 'none');
-        hitboxPath.setAttribute('class', 'hitbox'); hitboxPath.setAttribute('stroke-linecap', 'round');
-        hitboxPath.setAttribute('stroke-linejoin', 'round');
-        marker.setAttribute('id', 'arrowhead'); marker.setAttribute('markerWidth', '10'); marker.setAttribute('markerHeight', '7');
-        marker.setAttribute('refX', '9'); marker.setAttribute('refY', '3.5'); marker.setAttribute('orient', 'auto-start-reverse');
-        polygon.setAttribute('points', '0 0, 10 3.5, 0 7'); polygon.setAttribute('fill', '#4CAF50');
-        marker.appendChild(polygon); defs.appendChild(marker); svg.appendChild(defs); svg.appendChild(hitboxPath);
-        svg.appendChild(visiblePath); board.appendChild(svg); addInteractionListeners(svg); return svg;
-    }
-    createTextElement = function({ text, left, top, color, fontSize }, event) {
-        const textEl = document.createElement('div');
-        textEl.className = 'text-element';
-        if (left === undefined || top === undefined) {
-            const boardRect = board.getBoundingClientRect();
-            textEl.style.left = snapToGrid(event.clientX - boardRect.left) + 'px';
-            textEl.style.top = snapToGrid(event.clientY - boardRect.top) + 'px';
-            textEl.textContent = ''; textEl.contentEditable = true; textEl.classList.add('editing');
-            textEl.style.color = textColorInput.value; textEl.style.fontSize = fontSizeInput.value + 'px';
-        } else {
-            textEl.style.left = left; textEl.style.top = top; textEl.textContent = text;
-            textEl.contentEditable = false; textEl.style.color = color || 'white';
-            textEl.style.fontSize = fontSize || '16px';
-        }
-        textEl.addEventListener('dblclick', (e) => {
-            if (currentTool !== 'select') return; e.stopPropagation();
-            textEl.contentEditable = true; textEl.classList.add('editing');
-            textEl.focus(); document.execCommand('selectAll', false, null);
-        });
-        textEl.addEventListener('blur', () => {
-            textEl.contentEditable = false; textEl.classList.remove('editing');
-            if (textEl.textContent.trim() === '' && left === undefined) {
-                if (board.contains(textEl)) board.removeChild(textEl);
-            }
-        });
-        textEl.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); textEl.blur(); }
-            if (textEl.classList.contains('editing') && (e.key === 'Delete' || e.key === 'Backspace')) e.stopPropagation();
-        });
-        board.appendChild(textEl); addInteractionListeners(textEl);
-        if (left === undefined) setTimeout(() => textEl.focus(), 0); return textEl;
-    }
-    handleDrag = function(e) {
-        if (!isDragging) return;
-        const boardRect = board.getBoundingClientRect();
-        selections.forEach(sel => {
-            const offset = dragOffsets.get(sel);
-            if (offset.type === 'arrow') {
-                const dx = e.clientX - offset.offsetX, dy = e.clientY - offset.offsetY;
-                const newPoints = offset.initialPoints.map(p => ({ x: p.x + dx, y: p.y + dy }));
-                sel.arrowData.points = newPoints;
-                sel.querySelectorAll('path').forEach(p => p.setAttribute('d', pointsToPath(newPoints)));
-            } else {
-                sel.style.left = snapToGrid(e.clientX - boardRect.left - offset.offsetX) + 'px';
-                sel.style.top = snapToGrid(e.clientY - boardRect.top - offset.offsetY) + 'px';
-            }
-        });
-    }
-    handleDragEnd = function() {
-        document.removeEventListener('mousemove', handleDrag);
-        setTimeout(() => { isDragging = false; }, 0);
-        dragOffsets.clear();
-    }
-    handleArrowDraw = function(e) {
-        if (!isDrawingArrow) return;
-        const boardRect = board.getBoundingClientRect();
-        arrowPoints.push({ x: e.clientX - boardRect.left, y: e.clientY - boardRect.top });
-        arrowPreviewPath.setAttribute('d', pointsToPath(arrowPoints));
-    }
-    handleArrowEnd = function(e) {
-        document.removeEventListener('mousemove', handleArrowDraw); isDrawingArrow = false;
-        const boardRect = board.getBoundingClientRect();
-        const x = e.clientX - boardRect.left, y = e.clientY - boardRect.top;
-        if (!arrowPoints.length || arrowPoints[arrowPoints.length - 1].x !== x || arrowPoints[arrowPoints.length - 1].y !== y) {
-            arrowPoints.push({ x, y });
-        }
-        arrowPreview.style.display = 'none'; arrowPreviewPath.setAttribute('d', '');
-        if (arrowPoints.length >= 2) {
-            const points = [...arrowPoints];
-            createArrow({ points: e.shiftKey ? [points[0], points[points.length-1]] : points });
-        }
-        arrowPoints = [];
-    }
-    deleteState = function() {
-        const name = loadStateSelect.value;
-        if (!name) { alert('Please select a state to delete.'); return; }
-        if (confirm(`Are you sure you want to delete the state '${name}'?`)) {
-            localStorage.removeItem(STORAGE_PREFIX + name); populateLoadList();
-        }
-    }
-    populateLoadList = function(currentSelection) {
-        const savedStates = Object.keys(localStorage).filter(key => key.startsWith(STORAGE_PREFIX)).map(key => key.replace(STORAGE_PREFIX, ''));
-        loadStateSelect.innerHTML = '<option value="">-- Select a state --</option>';
-        savedStates.sort().forEach(name => {
-            const option = document.createElement('option');
-            option.value = name; option.textContent = name;
-            loadStateSelect.appendChild(option);
-        });
-        if (currentSelection) { loadStateSelect.value = currentSelection; }
-        loadStateSelect.dispatchEvent(new Event('change'));
-    }
     document.getElementById('generate-hand-button').addEventListener('click', () => {
       clearAllSelections(); board.querySelectorAll('.tile').forEach(t => t.remove());
       nextSpawnX = 50; nextSpawnY = 50; resetTileCounts();
@@ -956,16 +1027,20 @@
         attempts++;
       }
       hand.sort((a, b) => tileImages.indexOf(a) - tileImages.indexOf(b)).forEach(src => createDraggableTile({ src }));
+      updateDrawCounter();
     });
+
     document.getElementById('generate-tile-button').addEventListener('click', () => {
       recalculateTileCounts();
       const eligibleTiles = drawableTiles.filter(tile => tileCounts[tile] < getTileLimit(tile));
       if (eligibleTiles.length === 0) { alert("All available tiles have been drawn according to their limits."); return; }
       const tile = eligibleTiles[Math.floor(Math.random() * eligibleTiles.length)];
       tileCounts[tile]++; createDraggableTile({ src: tile });
+      updateDrawCounter();
     });
     
     populateLoadList();
+    updateDrawCounter();
     window.addEventListener('contextmenu', e => e.preventDefault(), true);
   </script>
 </body>
