@@ -397,6 +397,8 @@
     tileImages.forEach(tile => tileCounts[tile] = 0);
 
     let selections = new Set();
+    let tileClipboard = [];
+    let pendingPaste = null;
     let isSelecting = false;
     let isDragging = false;
     let isDrawingArrow = false;
@@ -874,9 +876,101 @@
         document.addEventListener('mouseup', onMouseUp, { once: true });
     }
 
+    // --- TILE COPY / PASTE GHOST PLACEMENT ---
+    function cancelPasteGhost() {
+        if (!pendingPaste) return;
+        pendingPaste.ghosts.forEach(ghost => ghost.element.remove());
+        pendingPaste = null;
+    }
+
+    function beginPasteGhost() {
+        if (!tileClipboard.length) return;
+        cancelPasteGhost();
+        const ghosts = tileClipboard.map(tile => {
+            const ghost = document.createElement('div');
+            ghost.className = 'tile';
+            ghost.dataset.src = tile.src;
+            ghost.dataset.rotation = tile.rotation;
+            ghost.style.position = 'absolute';
+            ghost.style.pointerEvents = 'none';
+            ghost.style.opacity = '0.45';
+            ghost.style.zIndex = '999';
+            const sideways = tile.rotation === 90 || tile.rotation === 270;
+            ghost.style.width = (sideways ? TILE_HEIGHT : TILE_WIDTH) + 'px';
+            ghost.style.height = (sideways ? TILE_WIDTH : TILE_HEIGHT) + 'px';
+            const img = document.createElement('img');
+            img.src = TILE_PATH_PREFIX + tile.src;
+            img.draggable = false;
+            img.style.transform = `rotate(${tile.rotation}deg)`;
+            ghost.appendChild(img);
+            board.appendChild(ghost);
+            return { element: ghost, ...tile };
+        });
+        pendingPaste = { ghosts };
+        board.style.cursor = 'copy';
+        const boardRect = board.getBoundingClientRect();
+        if (!lastPointerX && !lastPointerY) { lastPointerX = boardRect.left + boardRect.width / 2; lastPointerY = boardRect.top + boardRect.height / 2; }
+        positionPasteGhosts(lastPointerX, lastPointerY);
+    }
+
+    let lastPointerX = 0, lastPointerY = 0;
+    function positionPasteGhosts(clientX, clientY) {
+        if (!pendingPaste) return;
+        const rect = board.getBoundingClientRect();
+        const baseX = snapToGrid(clientX - rect.left - TILE_WIDTH / 2);
+        const baseY = snapToGrid(clientY - rect.top - TILE_HEIGHT / 2);
+        pendingPaste.ghosts.forEach(ghost => {
+            ghost.element.style.left = snapToGrid(baseX + ghost.offsetX) + 'px';
+            ghost.element.style.top = snapToGrid(baseY + ghost.offsetY) + 'px';
+        });
+    }
+
+    board.addEventListener('mousemove', e => { lastPointerX = e.clientX; lastPointerY = e.clientY; positionPasteGhosts(e.clientX, e.clientY); });
+    board.addEventListener('click', e => {
+        if (!pendingPaste) return;
+        const rect = board.getBoundingClientRect();
+        if (e.clientX < rect.left || e.clientX > rect.right || e.clientY < rect.top || e.clientY > rect.bottom) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const rects = pendingPaste.ghosts.map(ghost => ({
+            src: ghost.src,
+            rotation: ghost.rotation,
+            left: ghost.element.style.left,
+            top: ghost.element.style.top
+        }));
+        cancelPasteGhost();
+        rects.forEach(tile => createDraggableTile(tile));
+        board.style.cursor = '';
+        clearAllSelections();
+        updateDrawCounter();
+    }, true);
+
     // --- KEYBOARD SHORTCUTS ---
     document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && pendingPaste) {
+            cancelPasteGhost(); board.style.cursor = ''; return;
+        }
         if (e.target.isContentEditable || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+            const selectedTiles = [...selections].filter(el => el.classList.contains('tile'));
+            if (selectedTiles.length) {
+                e.preventDefault();
+                const parsed = selectedTiles.map(el => ({
+                    src: el.dataset.src.split('/').pop(),
+                    rotation: parseInt(el.dataset.rotation, 10) || 0,
+                    x: parseInt(el.style.left, 10) || 0,
+                    y: parseInt(el.style.top, 10) || 0
+                }));
+                const minX = Math.min(...parsed.map(t => t.x));
+                const minY = Math.min(...parsed.map(t => t.y));
+                tileClipboard = parsed.map(t => ({ src: t.src, rotation: t.rotation, offsetX: t.x - minX, offsetY: t.y - minY }));
+            }
+            return;
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
+            if (tileClipboard.length) { e.preventDefault(); beginPasteGhost(); }
+            return;
+        }
         if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSelectedItems(); }
         else if (e.key === '1') setActiveTool('select');
         else if (e.key === '2') setActiveTool('arrow');
