@@ -1003,12 +1003,77 @@
       updateDrawCounter();
     });
 
+    // Prevent the click generated after a palette drag from also auto-spawning.
+    let suppressPaletteClick = false;
+
     // --- INITIALIZATION ---
     tileImages.forEach(src => {
         const img = document.createElement('img');
         img.src = TILE_PATH_PREFIX + src;
         img.draggable = false;
+        // Drag from the palette to place a tile precisely; a simple click keeps
+        // the original auto-spawn behavior.
+        let paletteDrag = null;
+        img.addEventListener('mousedown', (e) => {
+            if (e.button !== 0) return;
+            paletteDrag = {
+                startX: e.clientX,
+                startY: e.clientY,
+                started: false,
+                preview: null
+            };
+
+            const onMove = (moveE) => {
+                if (!paletteDrag) return;
+                const dx = moveE.clientX - paletteDrag.startX;
+                const dy = moveE.clientY - paletteDrag.startY;
+                if (!paletteDrag.started && Math.hypot(dx, dy) > 5) {
+                    paletteDrag.started = true;
+                    paletteDrag.preview = document.createElement('div');
+                    paletteDrag.preview.className = 'tile';
+                    paletteDrag.preview.style.pointerEvents = 'none';
+                    paletteDrag.preview.style.opacity = '0.8';
+                    const previewImg = document.createElement('img');
+                    previewImg.src = TILE_PATH_PREFIX + src;
+                    previewImg.draggable = false;
+                    paletteDrag.preview.appendChild(previewImg);
+                    board.appendChild(paletteDrag.preview);
+                }
+                if (paletteDrag.started && paletteDrag.preview) {
+                    const boardRect = board.getBoundingClientRect();
+                    const x = moveE.clientX - boardRect.left - TILE_WIDTH / 2;
+                    const y = moveE.clientY - boardRect.top - TILE_HEIGHT / 2;
+                    paletteDrag.preview.style.left = snapToGrid(x) + 'px';
+                    paletteDrag.preview.style.top = snapToGrid(y) + 'px';
+                }
+            };
+
+            const onUp = (upE) => {
+                document.removeEventListener('mousemove', onMove);
+                document.removeEventListener('mouseup', onUp);
+                if (!paletteDrag) return;
+                const drag = paletteDrag;
+                paletteDrag = null;
+                if (drag.started) {
+                    const boardRect = board.getBoundingClientRect();
+                    const x = snapToGrid(upE.clientX - boardRect.left - TILE_WIDTH / 2);
+                    const y = snapToGrid(upE.clientY - boardRect.top - TILE_HEIGHT / 2);
+                    if (drag.preview) drag.preview.remove();
+                    // Only place when released on the board.
+                    if (upE.clientX >= boardRect.left && upE.clientX <= boardRect.right &&
+                        upE.clientY >= boardRect.top && upE.clientY <= boardRect.bottom) {
+                        createDraggableTile({ src, left: x + 'px', top: y + 'px' });
+                        updateDrawCounter();
+                    }
+                    suppressPaletteClick = true;
+                    setTimeout(() => { suppressPaletteClick = false; }, 0);
+                }
+            };
+            document.addEventListener('mousemove', onMove);
+            document.addEventListener('mouseup', onUp);
+        });
         img.addEventListener('click', () => {
+            if (suppressPaletteClick) return;
             createDraggableTile({ src });
             updateDrawCounter();
         });
